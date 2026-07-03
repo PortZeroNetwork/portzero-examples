@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "portzero-rust-local-process"
+name = "portzero-rust-docker-example"
 version = "0.1.0"

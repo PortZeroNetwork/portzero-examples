@@ -3,17 +3,21 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
+const LANGUAGE: &str = "rust";
+const VARIANT: &str = "process";
+
 fn main() -> std::io::Result<()> {
-    let tunnel = env::var("PZ_TUNNEL").unwrap_or_else(|_| "<unset>".to_string());
+    let tunnel = env::var("PZ_TUNNEL").unwrap_or_else(|_| "rust-process.portzero.local:80".to_string());
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
+    let tunnel_host = tunnel.split(':').next().unwrap_or(&tunnel);
 
-    eprintln!("[rust-server] bound to 127.0.0.1:{port} (ephemeral)");
-    eprintln!("[rust-server] PZ_TUNNEL={tunnel}");
-    eprintln!("[rust-server] direct check: curl http://127.0.0.1:{port}/");
-    if tunnel != "<unset>" {
-        eprintln!("[rust-server] overlay check: curl http://{tunnel}/");
-    }
+    println!(
+        "PORTZERO_EXAMPLE_LISTENING language={LANGUAGE} variant={VARIANT} host=127.0.0.1 port={port} url=http://127.0.0.1:{port}/ tunnel={tunnel} tunnel_url=http://{tunnel_host}/"
+    );
+    println!(
+        "This Rust process was launched with PZ_TUNNEL={tunnel}. It is now listening on localhost port {port}. The program asked to listen on port 0, so the OS assigned an available port. Next, portzero-local's local daemon will detect PZ_TUNNEL and the listening port, then make it available at http://{tunnel_host}/."
+    );
 
     for stream in listener.incoming() {
         match stream {
@@ -21,11 +25,11 @@ fn main() -> std::io::Result<()> {
                 let tunnel = tunnel.clone();
                 thread::spawn(move || {
                     if let Err(err) = handle_client(stream, &tunnel, port) {
-                        eprintln!("[rust-server] request failed: {err}");
+                        eprintln!("request failed: {err}");
                     }
                 });
             }
-            Err(err) => eprintln!("[rust-server] accept failed: {err}"),
+            Err(err) => eprintln!("accept failed: {err}"),
         }
     }
 
@@ -37,7 +41,7 @@ fn handle_client(mut stream: TcpStream, tunnel: &str, port: u16) -> std::io::Res
     let _ = stream.read(&mut buf)?;
 
     let body = format!(
-        "Hello from the Port Zero Rust local process example!\nPZ_TUNNEL={tunnel}\nserved on real port {port}\n"
+        "Hello from the PortZero Rust process example.\nPZ_TUNNEL={tunnel}\nlocalhost_port={port}\n"
     );
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

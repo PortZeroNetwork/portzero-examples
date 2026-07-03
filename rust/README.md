@@ -1,25 +1,26 @@
-# Rust Local Process Example
+# Rust Examples
 
-This example runs a Rust process that opts into Port
-Zero with `PZ_TUNNEL`, binds to port `0`, and serves plain HTTP on the random
-port assigned by the OS.
+This directory contains two minimal Rust examples for PortZero Local:
 
-Run it from PowerShell (Windows):
+- `process`: runs a plain Rust process on the host machine.
+- `docker`: runs the same minimal Rust HTTP server in a Docker container.
 
-```powershell
-git clone https://github.com/PortZeroNetwork/portzero-examples.git
-cd portzero-examples\rust
-$env:PZ_TUNNEL = "rust-demo.portzero.local:80"
-cargo run
+The process example asks the OS to listen on port `0`, so the OS assigns an available localhost port. The Docker example listens on port `8080` inside the container and asks Docker to assign an available localhost port on the host.
+
+Both examples use Rust's standard library instead of a web framework. For Rust, that is the smallest useful choice for showing PortZero Local because the example only needs one HTTP endpoint and no routing, middleware, async runtime, or framework configuration.
+
+Run the process example:
+
+```sh
+cd rust/process
+PZ_TUNNEL="rust-process.portzero.local:80" ./scripts/run.sh
 ```
 
-Run it from a terminal (macOS or Linux):
+Run the Docker example:
 
-```bash
-git clone https://github.com/PortZeroNetwork/portzero-examples.git
-cd portzero-examples/rust
-PZ_TUNNEL="rust-demo.portzero.local:80" cargo run
+```sh
+cd rust/docker
+PZ_TUNNEL="rust-docker.portzero.local:80" ./scripts/run.sh
 ```
 
-After starting the above command, navigate to http://rust-demo.portzero.local or https://rust-demo.portzero.local in your browser to see this example working with PortZero.
-
+On Windows, run the matching `scripts/run.ps1` script from PowerShell.

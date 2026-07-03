@@ -1,7 +1,6 @@
 [package]
-name = "portzero-rust-local-process"
+name = "portzero-rust-process-example"
 version = "0.1.0"
 edition = "2021"
 
 [workspace]
-
