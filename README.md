@@ -4,4 +4,5 @@ Minimal examples for PortZero Local are organized by language. Each language dir
 
 ## Languages
 
+- [Python](python/)
 - [Rust](rust/)

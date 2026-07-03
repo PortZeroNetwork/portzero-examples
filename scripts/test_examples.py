@@ -69,7 +69,7 @@ def main() -> int:
 
     failures.extend(check_example_prerequisites(examples))
 
-    runners = {"rust": test_scripted_http_example}
+    runners = {"python": test_scripted_http_example, "rust": test_scripted_http_example}
     results: list[Result] = []
 
     for example in examples:
@@ -114,6 +114,8 @@ def discover_examples(root: Path) -> list[Example]:
 def detect_kind(path: Path) -> str | None:
     if (path / "Cargo.toml").is_file():
         return "rust"
+    if (path / "app.py").is_file():
+        return "python"
     return None
 
 
@@ -152,6 +154,33 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
 
     if any(example.kind == "rust" for example in examples) and shutil.which("cargo") is None:
         failures.append("Missing Cargo. Install Rust with rustup, then rerun `just test`: https://rustup.rs/")
+
+    if any(example.kind == "python" for example in examples):
+        if os.name == "nt":
+            python = shutil.which("py")
+            command = [python, "-3", "--version"] if python is not None else None
+        else:
+            python = shutil.which("python3")
+            command = [python, "--version"] if python is not None else None
+
+        if command is None:
+            failures.append("Missing Python 3. Install Python 3, then rerun `just test`.")
+        else:
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=10,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                failures.append("Python 3 is installed but `python --version` timed out.")
+            else:
+                if completed.returncode != 0:
+                    failures.append(f"Python 3 is installed but not available: {compact(completed.stdout)}")
 
     if any(example.variant == "docker" for example in examples):
         docker = shutil.which("docker")
@@ -195,7 +224,7 @@ def test_scripted_http_example(example: Example) -> Result:
             return Result(example.name, False, error)
 
         body = http_get(fields["url"], timeout=10)
-        expected = ["Hello from the PortZero Rust", f"PZ_TUNNEL={tunnel}"]
+        expected = [f"Hello from the PortZero {example.language.title()}", f"PZ_TUNNEL={tunnel}"]
         missing = [text for text in expected if text not in body]
         if missing:
             return Result(example.name, False, f"HTTP response missing: {', '.join(missing)}")
