@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 from __future__ import annotations
 
 import argparse
@@ -193,19 +197,13 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
         failures.append("Missing Cargo. Install Rust with rustup, then rerun `just test`: https://rustup.rs/")
 
     if any(example.kind == "python" for example in examples):
-        if os.name == "nt":
-            python = shutil.which("py")
-            command = [python, "-3", "--version"] if python is not None else None
-        else:
-            python = shutil.which("python3")
-            command = [python, "--version"] if python is not None else None
-
-        if command is None:
-            failures.append("Missing Python 3. Install Python 3, then rerun `just test`.")
+        uv = shutil.which("uv")
+        if uv is None:
+            failures.append("Missing uv. Install uv (https://docs.astral.sh/uv/getting-started/installation/), then rerun `just test`.")
         else:
             try:
                 completed = subprocess.run(
-                    command,
+                    [uv, "--version"],
                     cwd=ROOT,
                     text=True,
                     stdout=subprocess.PIPE,
@@ -214,10 +212,10 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
                     check=False,
                 )
             except subprocess.TimeoutExpired:
-                failures.append("Python 3 is installed but `python --version` timed out.")
+                failures.append("uv is installed but `uv --version` timed out.")
             else:
                 if completed.returncode != 0:
-                    failures.append(f"Python 3 is installed but not available: {compact(completed.stdout)}")
+                    failures.append(f"uv is installed but not available: {compact(completed.stdout)}")
 
     if any(example.kind == "nodejs-typescript" for example in examples):
         node = shutil.which("node")
@@ -321,9 +319,7 @@ def direct_command(example: Example) -> list[str]:
     """Return the direct command to launch a process example (no wrapper script)."""
     lang = example.kind
     if lang == "python":
-        if os.name == "nt":
-            return ["py", "-3", "app.py"]
-        return ["python3", "app.py"]
+        return ["uv", "run", "--quiet", "python", "app.py"]
     if lang == "nodejs-typescript":
         return ["node", "app.ts"]
     if lang == "rust":
@@ -331,7 +327,7 @@ def direct_command(example: Example) -> list[str]:
     if lang == "csharp":
         return ["dotnet", "run", "--no-launch-profile"]
     # Fallback (should not happen)
-    return ["python3", "app.py"] if os.name != "nt" else ["py", "-3", "app.py"]
+    return ["uv", "run", "--quiet", "python", "app.py"]
 
 
 def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> Result:

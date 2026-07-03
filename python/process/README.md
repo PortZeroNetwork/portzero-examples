@@ -1,11 +1,11 @@
 # Python process example
 
 ```sh
-PZ_TUNNEL="python-process.portzero.local:80" python3 app.py
+PZ_TUNNEL="python-process.portzero.local:80" uv run python app.py
 ```
 
 PowerShell:
 
 ```powershell
-$env:PZ_TUNNEL="python-process.portzero.local:80"; py -3 app.py
+$env:PZ_TUNNEL="python-process.portzero.local:80"; uv run python app.py
 ```

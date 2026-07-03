@@ -13,7 +13,7 @@ Run the process example:
 
 ```sh
 cd python/process
-PZ_TUNNEL="python-process.portzero.local:80" python3 app.py
+PZ_TUNNEL="python-process.portzero.local:80" uv run python app.py
 ```
 
 Run the Docker example:
