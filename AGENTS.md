@@ -8,6 +8,7 @@ These examples are teaching material for the smallest useful PortZero Local setu
 - Use `<language>/process` for the plain local process example.
 - Use `<language>/docker` for the Docker container example.
 - Do not combine process and Docker variants in the same folder.
+- The root `README.md` must list every language directory that has examples, link only to that language folder, and avoid listing individual examples or variants.
 - Each variant directory must be a complete minimal working example.
 - Each variant directory must include:
   - `scripts/run.sh`
