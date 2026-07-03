@@ -69,7 +69,11 @@ def main() -> int:
 
     failures.extend(check_example_prerequisites(examples))
 
-    runners = {"python": test_scripted_http_example, "rust": test_scripted_http_example}
+    runners = {
+        "nodejs-typescript": test_scripted_http_example,
+        "python": test_scripted_http_example,
+        "rust": test_scripted_http_example,
+    }
     results: list[Result] = []
 
     for example in examples:
@@ -116,6 +120,8 @@ def detect_kind(path: Path) -> str | None:
         return "rust"
     if (path / "app.py").is_file():
         return "python"
+    if (path / "app.ts").is_file():
+        return "nodejs-typescript"
     return None
 
 
@@ -182,6 +188,32 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
                 if completed.returncode != 0:
                     failures.append(f"Python 3 is installed but not available: {compact(completed.stdout)}")
 
+    if any(example.kind == "nodejs-typescript" for example in examples):
+        node = shutil.which("node")
+        if node is None:
+            failures.append("Missing Node.js 24 or newer. Install Node.js 24 or newer, then rerun `just test`.")
+        else:
+            try:
+                completed = subprocess.run(
+                    [node, "--version"],
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=10,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                failures.append("Node.js is installed but `node --version` timed out.")
+            else:
+                version = parse_node_major_version(completed.stdout)
+                if completed.returncode != 0:
+                    failures.append(f"Node.js is installed but not available: {compact(completed.stdout)}")
+                elif version is None or version < 24:
+                    failures.append(
+                        f"Node.js 24 or newer is required to run TypeScript directly; found {compact(completed.stdout)}."
+                    )
+
     if any(example.variant == "docker" for example in examples):
         docker = shutil.which("docker")
         if docker is None:
@@ -224,7 +256,7 @@ def test_scripted_http_example(example: Example) -> Result:
             return Result(example.name, False, error)
 
         body = http_get(fields["url"], timeout=10)
-        expected = [f"Hello from the PortZero {example.language.title()}", f"PZ_TUNNEL={tunnel}"]
+        expected = [f"Hello from the PortZero {language_display_name(example)}", f"PZ_TUNNEL={tunnel}"]
         missing = [text for text in expected if text not in body]
         if missing:
             return Result(example.name, False, f"HTTP response missing: {', '.join(missing)}")
@@ -332,6 +364,19 @@ def validate_listener_fields(example: Example, fields: dict[str, str], tunnel: s
         return f"listener tunnel_url {fields['tunnel_url']} did not match {expected_tunnel_url}"
 
     return None
+
+
+def language_display_name(example: Example) -> str:
+    if example.kind == "nodejs-typescript":
+        return "Node.js TypeScript"
+    return example.language.title()
+
+
+def parse_node_major_version(output: str) -> int | None:
+    match = re.search(r"v?(\d+)", output)
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 def read_lines(stream, output: queue.Queue[str]) -> None:
