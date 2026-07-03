@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    environment:
+      PZ_TUNNEL: ${PZ_TUNNEL:-rust-docker.portzero.local:80}
+    ports:
+      - target: 8080
+        published: "0"
+        host_ip: 127.0.0.1
+        protocol: tcp

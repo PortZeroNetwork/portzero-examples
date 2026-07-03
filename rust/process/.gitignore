@@ -1,0 +1,11 @@
+# Rust build output
+/target/
+
+# Rust backup files
+**/*.rs.bk
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~

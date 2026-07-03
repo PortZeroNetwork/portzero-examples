@@ -13,8 +13,22 @@ These examples are teaching material for the smallest useful PortZero Local setu
 - Each variant directory must include:
   - `README.md` (with a code-fenced block showing the minimal commands to run the example)
   - the smallest source/build files needed to run that variant
+  - a `.gitignore` with language-appropriate patterns (see Git and Build Artifacts section)
 - Each Docker variant directory must use Docker Compose and include `docker-compose.yml`.
 - Each language directory must include `README.md` that lists `process` and `docker`, explains the difference consistently, and states the one web framework choice for that language.
+
+## Git and Build Artifacts
+
+- Always add and maintain a `.gitignore` inside **each variant directory** (`<language>/<variant>/`) using patterns appropriate to the language, runtime, and build tools for that example.
+- This ensures every self-contained example variant stays clean and includes its own ignore rules (useful when examples are copied or viewed in isolation).
+- Recommended minimal patterns per language:
+  - C# / .NET: `bin/`, `obj/`
+  - Rust: `target/`
+  - Python: `__pycache__/`, `*.py[cod]`
+  - Node.js / TypeScript: `node_modules/`
+- Also keep the repository root `.gitignore` up-to-date with the combined set of patterns for all supported languages.
+- Never commit build artifacts, caches, dependency trees, or generated outputs (`bin/`, `obj/`, `target/`, `__pycache__/`, `node_modules/`, etc.).
+- When adding a new language or variant, include the matching `.gitignore` (and update root if needed) in the same change.
 
 ## Scope
 
