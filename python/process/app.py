@@ -41,8 +41,11 @@ def main() -> None:
     )
     print(
         f"This Python process was launched with PZ_TUNNEL={tunnel}. It is now listening on localhost port {port}. "
-        "The program asked to listen on port 0, so the OS assigned an available port. Next, portzero-local's local "
-        f"daemon will detect PZ_TUNNEL and the listening port, then make it available at http://{tunnel_host}/.",
+        "Port Zero detects programs with PZ_TUNNEL listening on a port; the program does not need to read its own "
+        "PZ_TUNNEL value or detect what port the OS has assigned to it. Technically the program doesn't even need "
+        "to listen on port 0, although that is highly recommended because avoiding port conflicts is the whole point "
+        "of using PortZero. The program asked to listen on port 0, so the OS assigned an available port. Next, "
+        f"portzero-local's local daemon will detect PZ_TUNNEL and the listening port, then make it available at http://{tunnel_host}/.",
         flush=True,
     )
 
