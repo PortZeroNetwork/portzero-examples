@@ -66,8 +66,12 @@ def main() -> int:
             print(f"portzero-local: {detail}")
         else:
             failures.append(detail)
+            print(f"portzero-local: {detail}")
+            print("  (just test validates examples directly via their localhost endpoints; portzero-local is not needed for the test run.)")
 
     failures.extend(check_example_prerequisites(examples))
+
+    print("Testing examples by launching them and verifying HTTP responses (stdout from examples is shown for visibility).")
 
     runners = {
         "csharp": test_http_example,
@@ -343,9 +347,13 @@ def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> R
     subprocess.run(compose_base + ["down", "--remove-orphans"], cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
     print(f"+ ({cwd.relative_to(ROOT)}) PZ_TUNNEL={tunnel} docker compose -p {project} up --build -d")
-    up = subprocess.run(compose_base + ["up", "--build", "-d"], cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    up = subprocess.run(compose_base + ["up", "--build", "-d"], cwd=cwd, env=env, text=True, capture_output=True)
     if up.returncode != 0:
-        return Result(example.name, False, f"docker compose up failed: {compact(up.stdout)}")
+        if up.stdout:
+            sys.stdout.write(up.stdout)
+        return Result(example.name, False, f"docker compose up failed: {compact(up.stdout or '')}")
+    if up.stdout:
+        sys.stdout.write(up.stdout)
 
     container_id = ""
     try:
@@ -354,7 +362,6 @@ def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> R
     except Exception:
         pass
 
-    probe = docker_readiness_probe(example)
     deadline = time.monotonic() + 120
     host_port = ""
     while time.monotonic() < deadline:
@@ -375,20 +382,13 @@ def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> R
         except Exception:
             host_port = ""
 
-        if probe and container_id:
-            # Run the readiness probe inside the container (containers are linux, so sh -c always works)
+        if host_port:
+            # Wait until the HTTP endpoint actually responds (external, works regardless of tools inside container)
             try:
-                rc = subprocess.run(
-                    ["docker", "exec", container_id, "sh", "-c", probe],
-                    cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3
-                ).returncode
-                if rc == 0 and host_port:
-                    break
+                http_get(f"http://127.0.0.1:{host_port}/", timeout=2)
+                break
             except Exception:
                 pass
-        elif not probe and host_port:
-            # rust: once we have a port mapping, proceed
-            break
 
         time.sleep(0.25)
     else:
@@ -462,18 +462,6 @@ def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> R
     finally:
         stop_process(proc)
         subprocess.run(compose_base + ["down", "--remove-orphans"], cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-
-
-def docker_readiness_probe(example: Example) -> str | None:
-    """Return a shell command to exec inside the container to check readiness, or None for port-map only."""
-    if example.kind == "python":
-        return "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=1).read()\""
-    if example.kind == "nodejs-typescript":
-        return "node -e \"fetch('http://127.0.0.1:8080/').then(r => r.arrayBuffer())\""
-    if example.kind == "csharp":
-        return "curl -fsS http://127.0.0.1:8080/"
-    # rust: rely on port mapping only (as original scripts did)
-    return None
 
 
 def start_example(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.Popen[str]:
@@ -585,6 +573,8 @@ def parse_node_major_version(output: str) -> int | None:
 
 def read_lines(stream, output: queue.Queue[str]) -> None:
     for line in stream:
+        sys.stdout.write(line)
+        sys.stdout.flush()
         output.put(line)
 
 
