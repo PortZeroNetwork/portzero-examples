@@ -1,8 +1,5 @@
 import { createServer } from "node:http";
 
-const LANGUAGE = "nodejs-typescript";
-const VARIANT = "process";
-
 const tunnel = process.env.PZ_TUNNEL ?? "nodejs-typescript-process.portzero.local:80";
 const tunnelHost = tunnel.split(":", 1)[0];
 
@@ -29,7 +26,7 @@ server.listen(0, "127.0.0.1", () => {
 
   const port = address.port;
   console.log(
-    `PORTZERO_EXAMPLE_LISTENING language=${LANGUAGE} variant=${VARIANT} host=127.0.0.1 port=${port} url=http://127.0.0.1:${port}/ tunnel=${tunnel} tunnel_url=http://${tunnelHost}/`,
+    `PORTZERO_EXAMPLE_LISTENING language=nodejs-typescript variant=process host=127.0.0.1 port=${port} url=http://127.0.0.1:${port}/ tunnel=${tunnel} tunnel_url=http://${tunnelHost}/`,
   );
   console.log(
     `This Node.js TypeScript process was launched with PZ_TUNNEL=${tunnel}. It is now listening on localhost port ${port}. The program asked to listen on port 0, so the OS assigned an available port. Next, portzero-local's local daemon will detect PZ_TUNNEL and the listening port, then make it available at http://${tunnelHost}/.`,

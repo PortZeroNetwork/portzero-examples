@@ -3,9 +3,6 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
-const LANGUAGE: &str = "rust";
-const VARIANT: &str = "process";
-
 fn main() -> std::io::Result<()> {
     let tunnel = env::var("PZ_TUNNEL").unwrap_or_else(|_| "rust-process.portzero.local:80".to_string());
     let listener = TcpListener::bind("127.0.0.1:0")?;
@@ -13,7 +10,7 @@ fn main() -> std::io::Result<()> {
     let tunnel_host = tunnel.split(':').next().unwrap_or(&tunnel);
 
     println!(
-        "PORTZERO_EXAMPLE_LISTENING language={LANGUAGE} variant={VARIANT} host=127.0.0.1 port={port} url=http://127.0.0.1:{port}/ tunnel={tunnel} tunnel_url=http://{tunnel_host}/"
+        "PORTZERO_EXAMPLE_LISTENING language=rust variant=process host=127.0.0.1 port={port} url=http://127.0.0.1:{port}/ tunnel={tunnel} tunnel_url=http://{tunnel_host}/"
     );
     println!(
         "This Rust process was launched with PZ_TUNNEL={tunnel}. It is now listening on localhost port {port}. The program asked to listen on port 0, so the OS assigned an available port. Next, portzero-local's local daemon will detect PZ_TUNNEL and the listening port, then make it available at http://{tunnel_host}/."

@@ -4,10 +4,6 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
-LANGUAGE = "python"
-VARIANT = "process"
-
-
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         body = (
@@ -39,7 +35,7 @@ def main() -> None:
     port = server.server_port
 
     print(
-        f"PORTZERO_EXAMPLE_LISTENING language={LANGUAGE} variant={VARIANT} host=127.0.0.1 "
+        f"PORTZERO_EXAMPLE_LISTENING language=python variant=process host=127.0.0.1 "
         f"port={port} url=http://127.0.0.1:{port}/ tunnel={tunnel} tunnel_url=http://{tunnel_host}/",
         flush=True,
     )

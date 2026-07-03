@@ -9,7 +9,7 @@ class Handler(BaseHTTPRequestHandler):
         body = (
             "Hello from the PortZero Python Docker example.\n"
             f"PZ_TUNNEL={self.server.tunnel}\n"
-            f"container_port={self.server.server_port}\n"
+            "container_port=8080\n"
         ).encode("utf-8")
 
         self.send_response(200)

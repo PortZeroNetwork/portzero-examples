@@ -38,6 +38,15 @@ These examples are teaching material for the smallest useful PortZero Local setu
 - Every example must expose at least one HTTP endpoint.
 - Terminal output must list an `http://` endpoint. Do not assume HTTPS is enabled in `portzero-local`.
 
+## Code Style
+
+- Be as literal and hardcoded as possible.
+- Prefer simple, idiomatic code over abstractions or indirection whose only purpose is output formatting.
+- Do not introduce constants (or variables) solely to hold language names, variant names, or other fixed strings for the purpose of substituting them into the `PORTZERO_EXAMPLE_LISTENING` line or the following human explanation line.
+- Write the fixed portions of those stdout messages directly as literals inside the print/println/Console.WriteLine (or equivalent) statements.
+- Only interpolate the dynamic runtime values: the OS- or Docker-assigned port, the `PZ_TUNNEL` value, and the derived tunnel host when needed.
+- The same preference for literal text applies to other strings in the examples (hello messages, etc.) where values are known at authoring time.
+
 ## Runtime Output Contract
 
 Every process or container launch must print exactly one parseable listener line after the HTTP endpoint is reachable:
