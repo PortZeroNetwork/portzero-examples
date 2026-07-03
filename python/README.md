@@ -13,14 +13,14 @@ Run the process example:
 
 ```sh
 cd python/process
-PZ_TUNNEL="python-process.portzero.local:80" ./scripts/run.sh
+PZ_TUNNEL="python-process.portzero.local:80" python3 app.py
 ```
 
 Run the Docker example:
 
 ```sh
 cd python/docker
-PZ_TUNNEL="python-docker.portzero.local:80" ./scripts/run.sh
+PZ_TUNNEL="python-docker.portzero.local:80" docker compose up --build
 ```
 
-On Windows, run the matching `scripts/run.ps1` script from PowerShell.
+See `process/README.md` or `docker/README.md` inside the variant directory for the commands (including PowerShell syntax).

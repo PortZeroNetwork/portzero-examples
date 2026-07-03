@@ -4,6 +4,7 @@ Minimal examples for PortZero Local are organized by language. Each language dir
 
 ## Languages
 
+- [C#](csharp/)
 - [Node.js TypeScript](nodejs-typescript/)
 - [Python](python/)
 - [Rust](rust/)

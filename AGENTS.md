@@ -11,9 +11,9 @@ These examples are teaching material for the smallest useful PortZero Local setu
 - The root `README.md` must list every language directory that has examples, link only to that language folder, and avoid listing individual examples or variants.
 - Each variant directory must be a complete minimal working example.
 - Each variant directory must include:
-  - `scripts/run.sh`
-  - `scripts/run.ps1`
+  - `README.md` (with a code-fenced block showing the minimal commands to run the example)
   - the smallest source/build files needed to run that variant
+- Each Docker variant directory must use Docker Compose and include `docker-compose.yml`.
 - Each language directory must include `README.md` that lists `process` and `docker`, explains the difference consistently, and states the one web framework choice for that language.
 
 ## Scope
@@ -49,13 +49,13 @@ This <language> <process|container> was launched with PZ_TUNNEL=<value>. It is n
 
 For Docker examples, adjust the sentence to explain Docker's assigned localhost port instead of process port `0`.
 
-## Run Scripts
+## Running Examples
 
-- `scripts/run.sh` must be POSIX `sh`.
-- `scripts/run.ps1` must be PowerShell.
-- Scripts must be the canonical commands used by external tooling.
-- Scripts should set a sensible default `PZ_TUNNEL` only when the caller did not provide one.
-- Scripts should fail normally if a required tool is missing; the root `just test` harness is responsible for friendly prerequisite messages.
+- Examples are run via the minimal commands shown in each variant directory's `README.md`.
+- The code block in `README.md` shows the canonical command(s) (shell and PowerShell forms).
+- For Docker variants, always use `docker compose up --build` (Compose handles build and run).
+- The `PZ_TUNNEL` environment variable should be set by the user when following the example (apps and compose files provide matching defaults).
+- The `just test` harness is responsible for friendly prerequisite messages and for executing the examples (it does not rely on scripts inside example dirs).
 
 ## Test Harness
 

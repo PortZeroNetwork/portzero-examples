@@ -70,9 +70,10 @@ def main() -> int:
     failures.extend(check_example_prerequisites(examples))
 
     runners = {
-        "nodejs-typescript": test_scripted_http_example,
-        "python": test_scripted_http_example,
-        "rust": test_scripted_http_example,
+        "csharp": test_http_example,
+        "nodejs-typescript": test_http_example,
+        "python": test_http_example,
+        "rust": test_http_example,
     }
     results: list[Result] = []
 
@@ -116,6 +117,8 @@ def discover_examples(root: Path) -> list[Example]:
 
 
 def detect_kind(path: Path) -> str | None:
+    if any(path.glob("*.csproj")):
+        return "csharp"
     if (path / "Cargo.toml").is_file():
         return "rust"
     if (path / "app.py").is_file():
@@ -157,6 +160,30 @@ def check_portzero_local() -> tuple[bool, str]:
 
 def check_example_prerequisites(examples: list[Example]) -> list[str]:
     failures: list[str] = []
+
+    if any(example.kind == "csharp" for example in examples):
+        dotnet = shutil.which("dotnet")
+        if dotnet is None:
+            failures.append("Missing .NET SDK 10 or newer. Install .NET SDK 10 or newer, then rerun `just test`.")
+        else:
+            try:
+                completed = subprocess.run(
+                    [dotnet, "--version"],
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=10,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                failures.append(".NET SDK is installed but `dotnet --version` timed out.")
+            else:
+                version = parse_dotnet_major_version(completed.stdout)
+                if completed.returncode != 0:
+                    failures.append(f".NET SDK is installed but not available: {compact(completed.stdout)}")
+                elif version is None or version < 10:
+                    failures.append(f".NET SDK 10 or newer is required; found {compact(completed.stdout)}.")
 
     if any(example.kind == "rust" for example in examples) and shutil.which("cargo") is None:
         failures.append("Missing Cargo. Install Rust with rustup, then rerun `just test`: https://rustup.rs/")
@@ -237,20 +264,189 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
                 if completed.returncode != 0:
                     failures.append(f"Docker is installed but not available: {compact(completed.stdout)}")
 
+            try:
+                completed = subprocess.run(
+                    [docker, "compose", "version"],
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=20,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                failures.append("Docker Compose is installed but `docker compose version` timed out.")
+            else:
+                if completed.returncode != 0:
+                    failures.append(f"Docker Compose is not available: {compact(completed.stdout)}")
+
     return failures
 
 
-def test_scripted_http_example(example: Example) -> Result:
+def test_http_example(example: Example) -> Result:
     tunnel = f"{example.language}-{example.variant}.portzero.local:80"
     env = os.environ.copy()
     env["PZ_TUNNEL"] = tunnel
 
-    command = example_command(example)
-    print(f"+ ({example.path.relative_to(ROOT)}) {' '.join(command)}")
-    proc = start_example(command, example.path, env)
+    if example.variant == "docker":
+        return test_docker_example(example, tunnel, env)
+    else:
+        command = direct_command(example)
+        print(f"+ ({example.path.relative_to(ROOT)}) {' '.join(command)}")
+        proc = start_example(command, example.path, env)
+
+        try:
+            fields = wait_for_listener(proc, timeout=180)
+            error = validate_listener_fields(example, fields, tunnel)
+            if error:
+                return Result(example.name, False, error)
+
+            body = http_get(fields["url"], timeout=10)
+            expected = [f"Hello from the PortZero {language_display_name(example)}", f"PZ_TUNNEL={tunnel}"]
+            missing = [text for text in expected if text not in body]
+            if missing:
+                return Result(example.name, False, f"HTTP response missing: {', '.join(missing)}")
+            return Result(example.name, True)
+        except Exception as exc:
+            return Result(example.name, False, str(exc))
+        finally:
+            stop_process(proc)
+
+
+def direct_command(example: Example) -> list[str]:
+    """Return the direct command to launch a process example (no wrapper script)."""
+    lang = example.kind
+    if lang == "python":
+        if os.name == "nt":
+            return ["py", "-3", "app.py"]
+        return ["python3", "app.py"]
+    if lang == "nodejs-typescript":
+        return ["node", "app.ts"]
+    if lang == "rust":
+        return ["cargo", "run", "--quiet"]
+    if lang == "csharp":
+        return ["dotnet", "run", "--no-launch-profile"]
+    # Fallback (should not happen)
+    return ["python3", "app.py"] if os.name != "nt" else ["py", "-3", "app.py"]
+
+
+def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> Result:
+    """Run docker example by orchestrating compose ourselves and emitting the required listener line.
+
+    The complex logic lives only in the test harness, not in example folders.
+    """
+    project = f"portzero-example-{example.language}-{example.variant}-{os.getpid()}"
+    compose_base = ["docker", "compose", "-p", project]
+    cwd = example.path
+
+    # Ensure clean start
+    subprocess.run(compose_base + ["down", "--remove-orphans"], cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+    print(f"+ ({cwd.relative_to(ROOT)}) PZ_TUNNEL={tunnel} docker compose -p {project} up --build -d")
+    up = subprocess.run(compose_base + ["up", "--build", "-d"], cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if up.returncode != 0:
+        return Result(example.name, False, f"docker compose up failed: {compact(up.stdout)}")
+
+    container_id = ""
+    try:
+        ps = subprocess.run(compose_base + ["ps", "-q", "app"], cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
+        container_id = ps.stdout.strip()
+    except Exception:
+        pass
+
+    probe = docker_readiness_probe(example)
+    deadline = time.monotonic() + 120
+    host_port = ""
+    while time.monotonic() < deadline:
+        # Refresh container id if needed
+        if not container_id:
+            try:
+                ps = subprocess.run(compose_base + ["ps", "-q", "app"], cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
+                container_id = ps.stdout.strip()
+            except Exception:
+                pass
+
+        # Get current published host port if available
+        try:
+            port_out = subprocess.run(compose_base + ["port", "app", "8080"], cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
+            hp = (port_out.stdout or "").strip()
+            if hp:
+                host_port = hp.rsplit(":", 1)[-1] if ":" in hp else hp.strip()
+        except Exception:
+            host_port = ""
+
+        if probe and container_id:
+            # Run the readiness probe inside the container (containers are linux, so sh -c always works)
+            try:
+                rc = subprocess.run(
+                    ["docker", "exec", container_id, "sh", "-c", probe],
+                    cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3
+                ).returncode
+                if rc == 0 and host_port:
+                    break
+            except Exception:
+                pass
+        elif not probe and host_port:
+            # rust: once we have a port mapping, proceed
+            break
+
+        time.sleep(0.25)
+    else:
+        # timeout
+        try:
+            logs = subprocess.run(compose_base + ["logs", "app"], cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
+            print(logs.stdout)
+        except Exception:
+            pass
+        subprocess.run(compose_base + ["down", "--remove-orphans"], cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        return Result(example.name, False, "timed out waiting for docker container to become ready")
+
+    if not host_port:
+        # last attempt
+        try:
+            port_out = subprocess.run(compose_base + ["port", "app", "8080"], cwd=cwd, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
+            hp = port_out.stdout.strip()
+            if hp:
+                host_port = hp.rsplit(":", 1)[-1] if ":" in hp else hp
+        except Exception:
+            pass
+    if not host_port:
+        subprocess.run(compose_base + ["down", "--remove-orphans"], cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        return Result(example.name, False, "could not determine host port from docker compose")
+
+    tunnel_host = tunnel.split(":", 1)[0]
+    listener_line = (
+        f"PORTZERO_EXAMPLE_LISTENING language={example.language} variant=docker "
+        f"host=127.0.0.1 port={host_port} url=http://127.0.0.1:{host_port}/ tunnel={tunnel} tunnel_url=http://{tunnel_host}/"
+    )
+    explanation = (
+        f"This {language_display_name(example)} container was launched with PZ_TUNNEL={tunnel}. "
+        f"Docker assigned localhost port {host_port} for the container's HTTP endpoint. Next, portzero-local's local "
+        f"daemon will detect PZ_TUNNEL and the listening port, then make it available at http://{tunnel_host}/."
+    )
+
+    # Build a follower command whose stdout first emits the required listener lines (for the test parser),
+    # then streams the container logs. This replaces the old per-example scripts.
+    if os.name == "nt":
+        ps_script = (
+            f'Write-Output "{listener_line}"; '
+            f'Write-Output "{explanation}"; '
+            f'docker compose -p {project} logs -f app'
+        )
+        follower_cmd = [
+            "powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-Command", ps_script
+        ]
+    else:
+        sh_cmd = f'printf "%s\n%s\n" "{listener_line}" "{explanation}"; exec docker compose -p {project} logs -f app'
+        follower_cmd = ["sh", "-c", sh_cmd]
+
+    print(f"+ (docker logs follower for {project})")
+    proc = start_example(follower_cmd, cwd, env)
 
     try:
-        fields = wait_for_listener(proc, timeout=180)
+        # The listener lines are the first output from the follower; wait_for_listener will see them
+        fields = wait_for_listener(proc, timeout=30)
         error = validate_listener_fields(example, fields, tunnel)
         if error:
             return Result(example.name, False, error)
@@ -265,20 +461,19 @@ def test_scripted_http_example(example: Example) -> Result:
         return Result(example.name, False, str(exc))
     finally:
         stop_process(proc)
+        subprocess.run(compose_base + ["down", "--remove-orphans"], cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
 
-def example_command(example: Example) -> list[str]:
-    if os.name == "nt":
-        return [
-            "powershell.exe",
-            "-NoLogo",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(example.path / "scripts" / "run.ps1"),
-        ]
-    return [str(example.path / "scripts" / "run.sh")]
+def docker_readiness_probe(example: Example) -> str | None:
+    """Return a shell command to exec inside the container to check readiness, or None for port-map only."""
+    if example.kind == "python":
+        return "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=1).read()\""
+    if example.kind == "nodejs-typescript":
+        return "node -e \"fetch('http://127.0.0.1:8080/').then(r => r.arrayBuffer())\""
+    if example.kind == "csharp":
+        return "curl -fsS http://127.0.0.1:8080/"
+    # rust: rely on port mapping only (as original scripts did)
+    return None
 
 
 def start_example(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.Popen[str]:
@@ -367,9 +562,18 @@ def validate_listener_fields(example: Example, fields: dict[str, str], tunnel: s
 
 
 def language_display_name(example: Example) -> str:
+    if example.kind == "csharp":
+        return "C#"
     if example.kind == "nodejs-typescript":
         return "Node.js TypeScript"
     return example.language.title()
+
+
+def parse_dotnet_major_version(output: str) -> int | None:
+    match = re.search(r"(\d+)\.", output)
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 def parse_node_major_version(output: str) -> int | None:

@@ -13,14 +13,14 @@ Run the process example:
 
 ```sh
 cd nodejs-typescript/process
-PZ_TUNNEL="nodejs-typescript-process.portzero.local:80" ./scripts/run.sh
+PZ_TUNNEL="nodejs-typescript-process.portzero.local:80" node app.ts
 ```
 
 Run the Docker example:
 
 ```sh
 cd nodejs-typescript/docker
-PZ_TUNNEL="nodejs-typescript-docker.portzero.local:80" ./scripts/run.sh
+PZ_TUNNEL="nodejs-typescript-docker.portzero.local:80" docker compose up --build
 ```
 
-On Windows, run the matching `scripts/run.ps1` script from PowerShell.
+See `process/README.md` or `docker/README.md` inside the variant directory for the commands (including PowerShell syntax).

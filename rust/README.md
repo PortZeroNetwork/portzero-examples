@@ -13,14 +13,14 @@ Run the process example:
 
 ```sh
 cd rust/process
-PZ_TUNNEL="rust-process.portzero.local:80" ./scripts/run.sh
+PZ_TUNNEL="rust-process.portzero.local:80" cargo run --quiet
 ```
 
 Run the Docker example:
 
 ```sh
 cd rust/docker
-PZ_TUNNEL="rust-docker.portzero.local:80" ./scripts/run.sh
+PZ_TUNNEL="rust-docker.portzero.local:80" docker compose up --build
 ```
 
-On Windows, run the matching `scripts/run.ps1` script from PowerShell.
+See `process/README.md` or `docker/README.md` inside the variant directory for the commands (including PowerShell syntax).
