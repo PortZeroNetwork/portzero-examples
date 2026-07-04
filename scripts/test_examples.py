@@ -47,9 +47,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Discover and test all PortZero examples.")
     parser.add_argument("--list", action="store_true", help="list discovered examples without running them")
     parser.add_argument(
-        "--skip-portzero-local",
+        "--skip-portzero-cli",
         action="store_true",
-        help="skip the portzero-local prerequisite check and run direct local smoke tests only",
+        help="skip the PortZero CLI prerequisite check and run direct local smoke tests only",
     )
     args = parser.parse_args()
 
@@ -64,14 +64,14 @@ def main() -> int:
         return 0
 
     failures: list[str] = []
-    if not args.skip_portzero_local:
-        ok, detail = check_portzero_local()
+    if not args.skip_portzero_cli:
+        ok, detail = check_portzero_cli()
         if ok:
-            print(f"portzero-local: {detail}")
+            print(f"PortZero CLI: {detail}")
         else:
             failures.append(detail)
-            print(f"portzero-local: {detail}")
-            print("  (just test validates examples directly via their localhost endpoints; portzero-local is not needed for the test run.)")
+            print(f"PortZero CLI: {detail}")
+            print("  (just test validates examples directly via their localhost endpoints; the PortZero daemon is not needed for the test run.)")
 
     failures.extend(check_example_prerequisites(examples))
 
@@ -136,13 +136,14 @@ def detect_kind(path: Path) -> str | None:
     return None
 
 
-def check_portzero_local() -> tuple[bool, str]:
-    binary = shutil.which("portzero-local")
+def check_portzero_cli() -> tuple[bool, str]:
+    binary_name = "portzero"
+    binary = shutil.which(binary_name)
     if binary is None:
         return (
             False,
-            "Missing portzero-local. Install PortZero Local through your PortZero release channel, "
-            "then ensure `portzero-local` is on PATH.",
+            "Missing PortZero CLI. Install PortZero through your PortZero release channel, "
+            "then ensure `portzero` is on PATH.",
         )
 
     try:
@@ -156,13 +157,13 @@ def check_portzero_local() -> tuple[bool, str]:
             check=False,
         )
     except OSError as exc:
-        return False, f"Could not execute portzero-local at {binary}: {exc}"
+        return False, f"Could not execute {binary_name} at {binary}: {exc}"
     except subprocess.TimeoutExpired:
-        return False, "portzero-local --version timed out"
+        return False, f"{binary_name} --version timed out"
 
     version = completed.stdout.strip() or f"found at {binary}"
     if completed.returncode != 0:
-        return False, f"portzero-local --version failed: {version}"
+        return False, f"{binary_name} --version failed: {version}"
     return True, version
 
 
@@ -420,7 +421,7 @@ def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> R
         f"It is now listening on localhost port {host_port}. Port Zero detects programs with PZ_TUNNEL listening on a port; "
         "the program does not need to read its own PZ_TUNNEL value or detect what port the OS has assigned to it. "
         "Technically the program doesn't even need to listen on port 0, although that is highly recommended because avoiding port conflicts is the whole point of using PortZero. "
-        f"Docker assigned localhost port {host_port} for the container's HTTP endpoint. Next, portzero-local's local "
+        f"Docker assigned localhost port {host_port} for the container's HTTP endpoint. Next, PortZero's local "
         f"daemon will detect PZ_TUNNEL and the listening port, then make it available at http://{tunnel_host}/."
     )
 
