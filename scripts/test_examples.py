@@ -261,6 +261,8 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
                     timeout=20,
                     check=False,
                 )
+            except OSError as exc:
+                failures.append(f"Docker is installed but could not be executed: {exc}")
             except subprocess.TimeoutExpired:
                 failures.append("Docker is installed but `docker info` timed out. Start Docker, then rerun `just test`.")
             else:
@@ -277,6 +279,8 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
                     timeout=20,
                     check=False,
                 )
+            except OSError as exc:
+                failures.append(f"Docker Compose could not be executed: {exc}")
             except subprocess.TimeoutExpired:
                 failures.append("Docker Compose is installed but `docker compose version` timed out.")
             else:
@@ -296,7 +300,10 @@ def test_http_example(example: Example) -> Result:
     else:
         command = direct_command(example)
         print(f"+ ({example.path.relative_to(ROOT)}) {' '.join(command)}")
-        proc = start_example(command, example.path, env)
+        try:
+            proc = start_example(command, example.path, env)
+        except OSError as exc:
+            return Result(example.name, False, f"could not launch {' '.join(command)}: {exc}")
 
         try:
             fields = wait_for_listener(proc, timeout=180)
@@ -320,15 +327,19 @@ def direct_command(example: Example) -> list[str]:
     """Return the direct command to launch a process example (no wrapper script)."""
     lang = example.kind
     if lang == "python":
-        return ["uv", "run", "--quiet", "python", "app.py"]
+        return [command_path("uv"), "run", "--quiet", "python", "app.py"]
     if lang == "nodejs-typescript":
-        return ["node", "app.ts"]
+        return [command_path("node"), "app.ts"]
     if lang == "rust":
-        return ["cargo", "run", "--quiet"]
+        return [command_path("cargo"), "run", "--quiet"]
     if lang == "csharp":
-        return ["dotnet", "run", "--no-launch-profile"]
+        return [command_path("dotnet"), "run", "--no-launch-profile"]
     # Fallback (should not happen)
-    return ["uv", "run", "--quiet", "python", "app.py"]
+    return [command_path("uv"), "run", "--quiet", "python", "app.py"]
+
+
+def command_path(name: str) -> str:
+    return shutil.which(name) or name
 
 
 def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> Result:
@@ -337,14 +348,21 @@ def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> R
     The complex logic lives only in the test harness, not in example folders.
     """
     project = f"portzero-example-{example.language}-{example.variant}-{os.getpid()}"
-    compose_base = ["docker", "compose", "-p", project]
+    docker = command_path("docker")
+    compose_base = [docker, "compose", "-p", project]
     cwd = example.path
 
     # Ensure clean start
-    subprocess.run(compose_base + ["down", "--remove-orphans"], cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    try:
+        subprocess.run(compose_base + ["down", "--remove-orphans"], cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except OSError as exc:
+        return Result(example.name, False, f"Docker Compose could not be executed: {exc}")
 
     print(f"+ ({cwd.relative_to(ROOT)}) PZ_TUNNEL={tunnel} docker compose -p {project} up --build -d")
-    up = subprocess.run(compose_base + ["up", "--build", "-d"], cwd=cwd, env=env, text=True, capture_output=True)
+    try:
+        up = subprocess.run(compose_base + ["up", "--build", "-d"], cwd=cwd, env=env, text=True, capture_output=True)
+    except OSError as exc:
+        return Result(example.name, False, f"Docker Compose could not be executed: {exc}")
     if up.returncode != 0:
         if up.stdout:
             sys.stdout.write(up.stdout)
@@ -428,17 +446,18 @@ def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> R
     # Build a follower command whose stdout first emits the required listener lines (for the test parser),
     # then streams the container logs. This replaces the old per-example scripts.
     if os.name == "nt":
+        escaped_docker = docker.replace('"', '`"')
         ps_script = (
             f'Write-Output "{listener_line}"; '
             f'Write-Output "{explanation}"; '
-            f'docker compose -p {project} logs -f app'
+            f'& "{escaped_docker}" compose -p {project} logs -f app'
         )
         follower_cmd = [
             "powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
             "-Command", ps_script
         ]
     else:
-        sh_cmd = f'printf "%s\n%s\n" "{listener_line}" "{explanation}"; exec docker compose -p {project} logs -f app'
+        sh_cmd = f'printf "%s\n%s\n" "{listener_line}" "{explanation}"; exec "{docker}" compose -p {project} logs -f app'
         follower_cmd = ["sh", "-c", sh_cmd]
 
     print(f"+ (docker logs follower for {project})")
