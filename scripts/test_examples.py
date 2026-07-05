@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import queue
@@ -42,6 +43,17 @@ class Result:
     name: str
     ok: bool
     detail: str = ""
+    route_type: str = ""  # "local" or "cloud"
+    tunnel: str = ""
+    tunnel_url: str = ""
+
+
+@dataclass
+class TestRun:
+    example: Example
+    route_type: str
+    tunnel: str
+    result: Result | None = None
 
 
 def main() -> int:
@@ -82,7 +94,10 @@ def main() -> int:
     else:
         print(f"PortZero Cloud: {cloud_detail} (skipping Cloud tunnel tests)")
 
-    print("Testing examples by launching them and verifying HTTP responses (stdout from examples is shown for visibility).")
+    print("\n" + "="*80)
+    print("Testing examples by launching them and verifying HTTP responses")
+    print("(stdout from examples is shown for visibility)")
+    print("="*80 + "\n")
 
     runners = {
         "csharp": test_http_example,
@@ -90,29 +105,75 @@ def main() -> int:
         "python": test_http_example,
         "rust": test_http_example,
     }
-    results: list[Result] = []
 
+    # Build test runs for parallel execution
+    test_runs: list[TestRun] = []
     for example in examples:
         runner = runners.get(example.kind)
         if runner is None:
-            results.append(Result(example.name, False, f"no runner for {example.kind} examples"))
+            results_list = [Result(example.name, False, f"no runner for {example.kind} examples")]
             continue
 
         local_tunnel = f"{example.language}-{example.variant}.portzero.local:80"
-        local_result = runner(example, local_tunnel)
-        results.append(Result(f"{example.name} (local)", local_result.ok, local_result.detail))
+        test_runs.append(TestRun(example, "local", local_tunnel))
 
         if cloud_username:
             cloud_tunnel = f"{example.language}-{example.variant}.{cloud_username}.tunnel.portzero.cloud:80"
-            cloud_result = runner(example, cloud_tunnel)
-            results.append(Result(f"{example.name} (cloud)", cloud_result.ok, cloud_result.detail))
+            test_runs.append(TestRun(example, "cloud", cloud_tunnel))
 
+    # Execute tests in parallel
+    results: list[Result] = []
+    if test_runs:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(test_runs))) as executor:
+            futures = {}
+            for test_run in test_runs:
+                runner = runners.get(test_run.example.kind)
+                future = executor.submit(_run_test_with_output, test_run, runner)
+                futures[future] = test_run
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(futures):
+                test_run = futures[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as exc:
+                    results.append(Result(test_run.example.name, False, str(exc), test_run.route_type, test_run.tunnel, ""))
+
+    # Print summary grouped by route type
+    print("\n" + "="*80)
+    print("TEST SUMMARY")
+    print("="*80 + "\n")
+
+    local_results = [r for r in results if r.route_type == "local"]
+    cloud_results = [r for r in results if r.route_type == "cloud"]
+
+    if local_results:
+        print("LOCAL ROUTES (.portzero.local):")
+        for result in sorted(local_results, key=lambda r: r.name):
+            status = "✓ ok" if result.ok else "✗ FAILED"
+            print(f"  {status}: {result.name}")
+            if result.tunnel:
+                print(f"       Route: {result.tunnel_url}")
+            if result.detail:
+                print(f"       Detail: {result.detail}")
+        print()
+
+    if cloud_results:
+        print("CLOUD ROUTES (.tunnel.portzero.cloud):")
+        for result in sorted(cloud_results, key=lambda r: r.name):
+            status = "✓ ok" if result.ok else "✗ FAILED"
+            print(f"  {status}: {result.name}")
+            if result.tunnel:
+                print(f"       Route: {result.tunnel_url}")
+            if result.detail:
+                print(f"       Detail: {result.detail}")
+        print()
+
+    # Collect failures
     for result in results:
-        status = "ok" if result.ok else "FAILED"
-        suffix = f" - {result.detail}" if result.detail else ""
-        print(f"{status}: {result.name}{suffix}")
         if not result.ok:
-            failures.append(f"{result.name}: {result.detail}")
+            failures.append(f"{result.name} ({result.route_type}): {result.detail}")
 
     if failures:
         print()
@@ -122,6 +183,32 @@ def main() -> int:
         return 1
 
     return 0
+
+
+def _run_test_with_output(test_run: TestRun, runner) -> Result:
+    """Run a single test with explicit output about the route being tested."""
+    example = test_run.example
+    tunnel = test_run.tunnel
+    route_type = test_run.route_type
+
+    tunnel_host = tunnel.split(":", 1)[0]
+    tunnel_url = f"http://{tunnel_host}/"
+
+    print(f"\n[{route_type.upper()}] Testing: {example.name}")
+    print(f"[{route_type.upper()}] Route: {tunnel_url}")
+    print(f"[{route_type.upper()}] Tunnel: {tunnel}")
+
+    result = runner(example, tunnel)
+
+    if result.ok:
+        print(f"[{route_type.upper()}] ✓ Route taken DOWN (test passed, process stopped)")
+    else:
+        print(f"[{route_type.upper()}] ✗ Route FAILED: {result.detail}")
+
+    result.route_type = route_type
+    result.tunnel = tunnel
+    result.tunnel_url = tunnel_url
+    return result
 
 
 def discover_examples(root: Path) -> list[Example]:
