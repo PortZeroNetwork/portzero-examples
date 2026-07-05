@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import queue
 import re
@@ -75,6 +76,12 @@ def main() -> int:
 
     failures.extend(check_example_prerequisites(examples))
 
+    cloud_username, cloud_detail = check_cloud_status()
+    if cloud_username:
+        print(f"PortZero Cloud: {cloud_detail}; examples will also be tested with Cloud tunnels.")
+    else:
+        print(f"PortZero Cloud: {cloud_detail} (skipping Cloud tunnel tests)")
+
     print("Testing examples by launching them and verifying HTTP responses (stdout from examples is shown for visibility).")
 
     runners = {
@@ -90,7 +97,15 @@ def main() -> int:
         if runner is None:
             results.append(Result(example.name, False, f"no runner for {example.kind} examples"))
             continue
-        results.append(runner(example))
+
+        local_tunnel = f"{example.language}-{example.variant}.portzero.local:80"
+        local_result = runner(example, local_tunnel)
+        results.append(Result(f"{example.name} (local)", local_result.ok, local_result.detail))
+
+        if cloud_username:
+            cloud_tunnel = f"{example.language}-{example.variant}.{cloud_username}.tunnel.portzero.cloud:80"
+            cloud_result = runner(example, cloud_tunnel)
+            results.append(Result(f"{example.name} (cloud)", cloud_result.ok, cloud_result.detail))
 
     for result in results:
         status = "ok" if result.ok else "FAILED"
@@ -165,6 +180,39 @@ def check_portzero_cli() -> tuple[bool, str]:
     if completed.returncode != 0:
         return False, f"{binary_name} --version failed: {version}"
     return True, version
+
+
+def check_cloud_status() -> tuple[str | None, str]:
+    """Check whether the PortZero daemon is logged in and connected to the cloud.
+
+    Returns (username, detail). username is None (with an explanatory detail)
+    when Cloud tunnel testing should be skipped: the daemon isn't reachable,
+    isn't logged in, or the logged-in account has no username on file.
+    """
+    try:
+        body = http_get("http://api.portzero.local/v1/daemon/status", timeout=5)
+    except Exception as exc:
+        return None, f"could not reach http://api.portzero.local/v1/daemon/status: {exc}"
+
+    try:
+        status = json.loads(body)
+    except json.JSONDecodeError as exc:
+        return None, f"could not parse daemon status response: {exc}"
+
+    if not status.get("cloud_connected"):
+        return None, "daemon is not connected to PortZero Cloud (not logged in or no subscription)"
+
+    auth_path = Path.home() / ".portzero" / "auth.json"
+    try:
+        auth = json.loads(auth_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"cloud_connected is true but could not read username from {auth_path}: {exc}"
+
+    username = auth.get("username")
+    if not username:
+        return None, f"cloud_connected is true but {auth_path} has no username"
+
+    return username, f"logged in as {username}"
 
 
 def check_example_prerequisites(examples: list[Example]) -> list[str]:
@@ -290,8 +338,7 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
     return failures
 
 
-def test_http_example(example: Example) -> Result:
-    tunnel = f"{example.language}-{example.variant}.portzero.local:80"
+def test_http_example(example: Example, tunnel: str) -> Result:
     env = os.environ.copy()
     env["PZ_TUNNEL"] = tunnel
 

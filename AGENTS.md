@@ -85,3 +85,4 @@ For Docker examples, adjust the sentence to explain Docker's assigned localhost 
 - `just test` must discover examples automatically.
 - Adding a new `<language>/<variant>` example with recognized project files should make it run on the next `just test`.
 - When a language or variant needs a new detector, update `scripts/test_examples.py` in the same change.
+- Every discovered example is run with a `*.portzero.local` tunnel. It is also run a second time with a `*.<username>.tunnel.portzero.cloud` tunnel when the PortZero daemon reports `cloud_connected: true` at `http://api.portzero.local/v1/daemon/status`; the username comes from `~/.portzero/auth.json`. Cloud tunnel tests are skipped (with a printed reason) when not logged in.
