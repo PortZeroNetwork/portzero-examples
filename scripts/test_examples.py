@@ -67,12 +67,13 @@ def main() -> int:
     parser.add_argument(
         "--local",
         action="store_true",
-        help="test examples over .portzero.local tunnels (default if neither --local nor --cloud is given)",
+        help="test examples over .portzero.local tunnels (default if not logged in to PortZero Cloud)",
     )
     parser.add_argument(
         "--cloud",
         action="store_true",
-        help="test examples over .tunnel.portzero.cloud tunnels (requires being logged in to PortZero Cloud)",
+        help="test examples over .tunnel.portzero.cloud tunnels (default if logged in to PortZero Cloud; "
+        "fails if not logged in and explicitly requested)",
     )
     parser.add_argument(
         "filters",
@@ -80,9 +81,6 @@ def main() -> int:
         help="only run examples whose language and/or variant match these terms, e.g. `csharp docker`",
     )
     args = parser.parse_args()
-
-    if not args.local and not args.cloud:
-        args.local = True
 
     examples = discover_examples(ROOT)
     if not examples:
@@ -120,14 +118,23 @@ def main() -> int:
 
     failures.extend(check_example_prerequisites(examples))
 
+    explicit_choice = args.local or args.cloud
+
     cloud_username = None
-    if args.cloud:
+    if args.cloud or not explicit_choice:
         cloud_username, cloud_detail = check_cloud_status()
         if cloud_username:
             print(f"PortZero Cloud: {cloud_detail}; testing Cloud tunnels.")
-        else:
+        elif args.cloud:
             print(f"PortZero Cloud: {cloud_detail}")
             failures.append(f"--cloud requested but PortZero Cloud is unavailable: {cloud_detail}")
+        else:
+            print(f"PortZero Cloud: {cloud_detail}")
+
+    if not explicit_choice:
+        # Default: cloud if logged in, local otherwise.
+        args.cloud = bool(cloud_username)
+        args.local = not cloud_username
 
     if args.local:
         print("Testing local (.portzero.local) tunnels.")
