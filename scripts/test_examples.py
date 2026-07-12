@@ -65,11 +65,24 @@ def main() -> int:
         help="skip the PortZero CLI prerequisite check and run direct local smoke tests only",
     )
     parser.add_argument(
+        "--local",
+        action="store_true",
+        help="test examples over .portzero.local tunnels (default if neither --local nor --cloud is given)",
+    )
+    parser.add_argument(
+        "--cloud",
+        action="store_true",
+        help="test examples over .tunnel.portzero.cloud tunnels (requires being logged in to PortZero Cloud)",
+    )
+    parser.add_argument(
         "filters",
         nargs="*",
         help="only run examples whose language and/or variant match these terms, e.g. `csharp docker`",
     )
     args = parser.parse_args()
+
+    if not args.local and not args.cloud:
+        args.local = True
 
     examples = discover_examples(ROOT)
     if not examples:
@@ -107,11 +120,17 @@ def main() -> int:
 
     failures.extend(check_example_prerequisites(examples))
 
-    cloud_username, cloud_detail = check_cloud_status()
-    if cloud_username:
-        print(f"PortZero Cloud: {cloud_detail}; examples will also be tested with Cloud tunnels.")
-    else:
-        print(f"PortZero Cloud: {cloud_detail} (skipping Cloud tunnel tests)")
+    cloud_username = None
+    if args.cloud:
+        cloud_username, cloud_detail = check_cloud_status()
+        if cloud_username:
+            print(f"PortZero Cloud: {cloud_detail}; testing Cloud tunnels.")
+        else:
+            print(f"PortZero Cloud: {cloud_detail}")
+            failures.append(f"--cloud requested but PortZero Cloud is unavailable: {cloud_detail}")
+
+    if args.local:
+        print("Testing local (.portzero.local) tunnels.")
 
     print("\n" + "="*80)
     print("Testing examples by launching them and verifying HTTP responses")
@@ -133,8 +152,9 @@ def main() -> int:
             results_list = [Result(example.name, False, f"no runner for {example.kind} examples")]
             continue
 
-        local_tunnel = f"{example.language}-{example.variant}.portzero.local:80"
-        test_runs.append(TestRun(example, "local", local_tunnel))
+        if args.local:
+            local_tunnel = f"{example.language}-{example.variant}.portzero.local:80"
+            test_runs.append(TestRun(example, "local", local_tunnel))
 
         if cloud_username:
             cloud_tunnel = f"{example.language}-{example.variant}.{cloud_username}.tunnel.portzero.cloud:80"
