@@ -64,12 +64,31 @@ def main() -> int:
         action="store_true",
         help="skip the PortZero CLI prerequisite check and run direct local smoke tests only",
     )
+    parser.add_argument(
+        "filters",
+        nargs="*",
+        help="only run examples whose language and/or variant match these terms, e.g. `csharp docker`",
+    )
     args = parser.parse_args()
 
     examples = discover_examples(ROOT)
     if not examples:
         print("No examples found.")
         return 1
+
+    if args.filters:
+        examples = [
+            example
+            for example in examples
+            if all(
+                term.lower() in {example.language.lower(), example.variant.lower(), example.kind.lower()}
+                for term in args.filters
+            )
+        ]
+        if not examples:
+            print(f"No examples match filters: {' '.join(args.filters)}")
+            print("Run `just list-examples` to see available examples.")
+            return 1
 
     if args.list:
         for example in examples:
