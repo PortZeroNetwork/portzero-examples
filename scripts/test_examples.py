@@ -76,6 +76,12 @@ def main() -> int:
         "fails if not logged in and explicitly requested)",
     )
     parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="pause after each example verifies successfully, so you can hit its tunnel manually before it's torn down "
+        "(runs examples one at a time; press Enter to continue)",
+    )
+    parser.add_argument(
         "filters",
         nargs="*",
         help="only run examples whose language and/or variant match these terms, e.g. `csharp docker`",
@@ -167,14 +173,18 @@ def main() -> int:
             cloud_tunnel = f"{example.language}-{example.variant}.{cloud_username}.tunnel.portzero.cloud:80"
             test_runs.append(TestRun(example, "cloud", cloud_tunnel))
 
-    # Execute tests in parallel
+    if args.wait and len(test_runs) > 1:
+        print(f"--wait: running {len(test_runs)} matched tests one at a time so prompts don't overlap.\n")
+
+    # Execute tests in parallel (or one at a time under --wait, so manual prompts don't interleave)
     results: list[Result] = []
     if test_runs:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(test_runs))) as executor:
+        max_workers = 1 if args.wait else min(4, len(test_runs))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
             for test_run in test_runs:
                 runner = runners.get(test_run.example.kind)
-                future = executor.submit(_run_test_with_output, test_run, runner)
+                future = executor.submit(_run_test_with_output, test_run, runner, args.wait)
                 futures[future] = test_run
 
             # Collect results as they complete
@@ -231,7 +241,7 @@ def main() -> int:
     return 0
 
 
-def _run_test_with_output(test_run: TestRun, runner) -> Result:
+def _run_test_with_output(test_run: TestRun, runner, wait: bool) -> Result:
     """Run a single test with explicit output about the route being tested."""
     example = test_run.example
     tunnel = test_run.tunnel
@@ -244,7 +254,7 @@ def _run_test_with_output(test_run: TestRun, runner) -> Result:
     print(f"[{route_type.upper()}] Route: {tunnel_url}")
     print(f"[{route_type.upper()}] Tunnel: {tunnel}")
 
-    result = runner(example, tunnel)
+    result = runner(example, tunnel, wait)
 
     if result.ok:
         print(f"[{route_type.upper()}] ✓ Route taken DOWN (test passed, process stopped)")
@@ -471,12 +481,20 @@ def check_example_prerequisites(examples: list[Example]) -> list[str]:
     return failures
 
 
-def test_http_example(example: Example, tunnel: str) -> Result:
+def wait_for_manual_testing(example: Example, tunnel_url: str) -> None:
+    print(f"\n[WAIT] {example.name} is verified and still running at {tunnel_url}")
+    try:
+        input("[WAIT] Press Enter to stop it and continue... ")
+    except EOFError:
+        pass
+
+
+def test_http_example(example: Example, tunnel: str, wait: bool = False) -> Result:
     env = os.environ.copy()
     env["PZ_TUNNEL"] = tunnel
 
     if example.variant == "docker":
-        return test_docker_example(example, tunnel, env)
+        return test_docker_example(example, tunnel, env, wait)
     else:
         command = direct_command(example)
         print(f"+ ({example.path.relative_to(ROOT)}) {' '.join(command)}")
@@ -496,6 +514,8 @@ def test_http_example(example: Example, tunnel: str) -> Result:
             missing = [text for text in expected if text not in body]
             if missing:
                 return Result(example.name, False, f"HTTP response missing: {', '.join(missing)}")
+            if wait:
+                wait_for_manual_testing(example, fields["tunnel_url"])
             return Result(example.name, True)
         except Exception as exc:
             return Result(example.name, False, str(exc))
@@ -522,7 +542,7 @@ def command_path(name: str) -> str:
     return shutil.which(name) or name
 
 
-def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> Result:
+def test_docker_example(example: Example, tunnel: str, env: dict[str, str], wait: bool = False) -> Result:
     """Run docker example by orchestrating compose ourselves and emitting the required listener line.
 
     The complex logic lives only in the test harness, not in example folders.
@@ -655,6 +675,8 @@ def test_docker_example(example: Example, tunnel: str, env: dict[str, str]) -> R
         missing = [text for text in expected if text not in body]
         if missing:
             return Result(example.name, False, f"HTTP response missing: {', '.join(missing)}")
+        if wait:
+            wait_for_manual_testing(example, fields["tunnel_url"])
         return Result(example.name, True)
     except Exception as exc:
         return Result(example.name, False, str(exc))
